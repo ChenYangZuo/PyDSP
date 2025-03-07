@@ -182,3 +182,96 @@ matplotlib.pyplot.pcolormesh(*args, alpha=None, norm=None, cmap=None, vmin=None,
 此处使用`t`作为x轴，`f`作为y轴，`np.abs(spectrum)`STFT得到的幅值作为数据。
 
 <img src="stft_test1.png" alt="stft1" style="zoom:33%;" />
+
+## 3-滤波器设计
+
+在数字系统中，常用滤波器分为有限脉冲响应（FIR）滤波器和无限脉冲响应（IIR）滤波器，其中FIR滤波器严格线性相位、稳定性好、无反馈结构适合并行运算，是数字系统中最常用的滤波器。下文主要介绍FIR滤波器的设计与使用。
+
+SciPy中提供了`scipy.signal.firwin()`函数用于设计滤波器，其原型为：
+
+```python
+scipy.signal.firwin(numtaps, cutoff, width=None, window='hamming', pass_zero=True, scale=True, fs=2.0)
+```
+
+其中：
+
+- numtaps：滤波器阶数，越大滤波器越平滑，但计算量增加
+- cutoff：截止频率，单位为Hz
+- width：过渡带宽度，单位为Hz，用于Kaiser滤波器设计，可选
+- window：窗函数，可选：'hamming'、'hann'、'blackman'等
+- pass_zero：滤波器种类，可选：'bandpass'、 'lowpass'、 'highpass'、 'bandstop'等
+- scale：设置为`True`可缩放系数，使频率响应在一定频率上完全一致
+- fs：采样率
+
+要设计滤波器，可使用：
+
+```python
+fir_coeff = signal.firwin(numtaps, cutoff, fs=fs, window=window_type)
+w, h = signal.freqz(fir_coeff, worN=8000)
+
+plt.plot(w * fs / (2 * np.pi), np.abs(h))
+plt.xlabel("频率 (Hz)")
+plt.ylabel("幅度")
+plt.grid()
+plt.show()
+```
+
+其中`fir_coeff`为生成的抽头系数，`signal.freqz`用于计算滤波器的频率响应，其原型为：
+
+```python
+freqz(b, a=1, worN=512, whole=False, plot=None, fs=6.283185307179586, include_nyquist=False)
+```
+
+- b：滤波器分子系数系数
+- a：由于FIR仅有分子部分，因此`a`默认为 1.0
+- worN：计算频点个数，用以控制曲线的分辨率
+
+返回角频率w与频率响应h，w的单位为弧度/采样，因此需要`w * fs / (2 * np.pi)`将单位转换为Hz；h是复数，取模值可得到幅度响应，取角度可得相位响应。
+
+<img src="fir_test1.png" alt="fir1" style="zoom:33%;" />
+
+得到滤波器抽头系数后可对原始数据进行处理。SciPy中提供了`scipy.signal.lfilter()`函数进行处理，其原型为：
+
+```python
+lfilter(b, a, x, axis=-1, zi=None)
+```
+
+其中：
+
+- b：滤波器分子系数系数
+- a：由于FIR仅有分子部分，因此`a`默认为 1.0
+- x：输入数据
+
+Numpy中可使用`np.convolve()`函数进行卷积计算，其原型为：
+
+```python
+numpy.convolve(a, v, mode='full')
+```
+
+其中：
+
+- a：一路输入数据`N`
+- v：另一路输入数据`M`
+- mode：可选：'full', 'valid', 'same'，选择'full'时输出大小为`N+M-1`，选择'valid'时输出大小为`max(M, N) - min(M, N) + 1`，选择'same'时输出大小为`max(M, N)`
+
+相比而言，`scipy.signal.lfilter()`采用递归计算方式，更适合长信号处理；`np.convolve()`采用直接卷积方式，更适合断信号或单次应用滤波器。
+
+```python
+x = np.sin(2 * np.pi * 50 * t) + 0.5 * np.sin(2 * np.pi * 120 * t) + 0.5 * np.random.randn(N)
+fir_coeff = signal.firwin(numtaps, cutoff, fs=fs, window=window_type)
+
+fft_result = np.fft.fftshift(np.abs(np.fft.fft(x))*2/N)
+freqs = np.fft.fftshift(np.fft.fftfreq(N, 1/fs))
+plt.plot(freqs, fft_result, label='Original Signal')
+
+y = signal.lfilter(fir_coeff, 1, x)
+fft_result = np.fft.fftshift(np.abs(np.fft.fft(y))*2/N)
+plt.plot(freqs, fft_result, label='Filtered Signal')
+
+z = np.convolve(x, fir_coeff, mode='same')
+fft_result = np.fft.fftshift(np.abs(np.fft.fft(z))*2/N)
+plt.plot(freqs, fft_result, label='Convolved Signal')
+```
+
+<img src="fir_test2.png" alt="fir2" style="zoom:33%;" />
+
